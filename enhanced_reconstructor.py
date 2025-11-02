@@ -2,7 +2,6 @@ import cv2
 import numpy as np
 from pathlib import Path
 import time
-from concurrent.futures import ProcessPoolExecutor
 import json
 from tqdm import tqdm
 import argparse
@@ -10,10 +9,8 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 
 class EnhancedVideoReconstructor:
-    def __init__(self, video_path, use_multiprocessing=True, num_workers=None):
+    def __init__(self, video_path):
         self.video_path = Path(video_path)
-        self.use_multiprocessing = use_multiprocessing
-        self.num_workers = num_workers
         self.frames = []
         self.frame_features = []
         
@@ -153,6 +150,14 @@ class EnhancedVideoReconstructor:
         print(f"\nReconstructing with lookahead={lookahead}...")
         n = len(similarity_matrix)
         
+        if n == 0:
+            print("Error: Empty similarity matrix!")
+            return None
+        
+        if n == 1:
+            print("Only one frame, returning trivial path")
+            return [0]
+        
         best_path = None
         best_score = -np.inf
         
@@ -203,6 +208,10 @@ class EnhancedVideoReconstructor:
                 if score > best_score:
                     best_score = score
                     best_path = path
+        
+        if best_path is None:
+            print("Warning: Could not find valid path, using sequential order")
+            best_path = list(range(n))
         
         print(f"Best path score: {best_score:.4f}")
         return best_path
@@ -257,6 +266,10 @@ class EnhancedVideoReconstructor:
         out = cv2.VideoWriter(str(output_path), fourcc, original_fps,
                              (original_width, original_height))
         
+        if not out.isOpened():
+            print(f"Error: Could not open video writer for {output_path}")
+            return
+        
         for idx in tqdm(frame_order, desc="Writing"):
             out.write(original_frames[idx])
         
@@ -269,9 +282,17 @@ class EnhancedVideoReconstructor:
         
         fps, width, height = self.load_frames()
         
+        if len(self.frames) == 0:
+            print("Error: No frames loaded from video!")
+            return None
+        
         similarity_matrix = self.build_similarity_matrix_adaptive()
         
         frame_order = self.greedy_reconstruction_with_lookahead(similarity_matrix)
+        
+        if frame_order is None:
+            print("Error: Failed to reconstruct frame order!")
+            return None
         
         if use_refinement and frame_order is not None:
             frame_order = self.two_opt_refinement(frame_order, similarity_matrix)
@@ -287,7 +308,8 @@ class EnhancedVideoReconstructor:
             'execution_time_seconds': execution_time,
             'num_frames': len(self.frames),
             'refinement': use_refinement,
-            'output_path': str(output_path)
+            'output_path': str(output_path),
+            'success': True
         }
         
         with open('execution_log.json', 'w') as f:

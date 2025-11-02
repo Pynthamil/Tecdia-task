@@ -2,16 +2,13 @@ import cv2
 import numpy as np
 from pathlib import Path
 import time
-from concurrent.futures import ProcessPoolExecutor
 import json
 from tqdm import tqdm
 import argparse
 
 class VideoReconstructor:
-    def __init__(self, video_path, use_multiprocessing=True, num_workers=None):
+    def __init__(self, video_path):
         self.video_path = Path(video_path)
-        self.use_multiprocessing = use_multiprocessing
-        self.num_workers = num_workers
         self.frames = []
         self.frame_indices = []
         
@@ -72,23 +69,9 @@ class VideoReconstructor:
         
         similarity_matrix = np.zeros((n, n))
         
-        pairs = [(i, j) for i in range(n) for j in range(i + 1, n)]
-        
-        if self.use_multiprocessing and len(pairs) > 100:
-            print(f"Using parallel processing with {self.num_workers or 'auto'} workers...")
-            
-            batch_size = 1000
-            with ProcessPoolExecutor(max_workers=self.num_workers) as executor:
-                for batch_start in tqdm(range(0, len(pairs), batch_size), desc="Processing batches"):
-                    batch_pairs = pairs[batch_start:batch_start + batch_size]
-                    results = list(executor.map(self._compute_pair_similarity, batch_pairs))
-                    
-                    for (i, j), sim in zip(batch_pairs, results):
-                        similarity_matrix[i, j] = sim
-                        similarity_matrix[j, i] = sim
-        else:
-            print("Using single-threaded processing...")
-            for i, j in tqdm(pairs, desc="Computing similarities"):
+        print("Computing frame similarities...")
+        for i in tqdm(range(n), desc="Processing frames"):
+            for j in range(i + 1, n):
                 sim = self.compute_frame_similarity(i, j)
                 similarity_matrix[i, j] = sim
                 similarity_matrix[j, i] = sim
@@ -97,12 +80,17 @@ class VideoReconstructor:
         
         return similarity_matrix
     
-    def _compute_pair_similarity(self, pair):
-        return self.compute_frame_similarity(pair[0], pair[1])
-    
     def greedy_path_reconstruction(self, similarity_matrix):
         print("\nReconstructing frame order using greedy algorithm...")
         n = len(similarity_matrix)
+        
+        if n == 0:
+            print("Error: Empty similarity matrix!")
+            return None
+        
+        if n == 1:
+            print("Only one frame, returning trivial path")
+            return [0]
         
         best_path = None
         best_score = -np.inf
@@ -129,6 +117,10 @@ class VideoReconstructor:
             if score > best_score:
                 best_score = score
                 best_path = path
+        
+        if best_path is None:
+            print("Warning: Could not find valid path, using sequential order")
+            best_path = list(range(n))
         
         print(f"Best path score: {best_score:.2f}")
         return best_path
@@ -186,6 +178,10 @@ class VideoReconstructor:
         out = cv2.VideoWriter(str(output_path), fourcc, original_fps, 
                              (original_width, original_height))
         
+        if not out.isOpened():
+            print(f"Error: Could not open video writer for {output_path}")
+            return
+        
         for idx in tqdm(frame_order, desc="Writing frames"):
             out.write(original_frames[idx])
         
@@ -197,12 +193,20 @@ class VideoReconstructor:
         
         fps, width, height = self.load_frames()
         
+        if len(self.frames) == 0:
+            print("Error: No frames loaded from video!")
+            return None, 0
+        
         similarity_matrix = self.build_similarity_matrix()
         
         if method == 'bidirectional':
             frame_order = self.bidirectional_reconstruction(similarity_matrix)
         else:
             frame_order = self.greedy_path_reconstruction(similarity_matrix)
+        
+        if frame_order is None:
+            print("Error: Failed to reconstruct frame order!")
+            return None, 0
         
         self.save_reconstructed_video(frame_order, output_path, fps, width, height)
         
@@ -213,8 +217,8 @@ class VideoReconstructor:
             'execution_time_seconds': execution_time,
             'num_frames': len(self.frames),
             'method': method,
-            'multiprocessing': self.use_multiprocessing,
-            'output_path': str(output_path)
+            'output_path': str(output_path),
+            'success': True
         }
         
         with open('execution_log.json', 'w') as f:
@@ -234,18 +238,10 @@ def main():
                        help='Output video path (default: reconstructed_video.mp4)')
     parser.add_argument('-m', '--method', choices=['greedy', 'bidirectional'], 
                        default='greedy', help='Reconstruction method')
-    parser.add_argument('--no-multiprocessing', action='store_true',
-                       help='Disable multiprocessing')
-    parser.add_argument('-w', '--workers', type=int, default=None,
-                       help='Number of worker processes')
     
     args = parser.parse_args()
     
-    reconstructor = VideoReconstructor(
-        args.input_video,
-        use_multiprocessing=not args.no_multiprocessing,
-        num_workers=args.workers
-    )
+    reconstructor = VideoReconstructor(args.input_video)
     
     reconstructor.reconstruct(args.output, method=args.method)
 
