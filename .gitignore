@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Video files (don't commit large videos)
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Logs and temporary files
+*.log
+execution_log.json
+temporal_consistency_results.json
+evaluation_results.json
+
+# Output files
+reconstructed_video.mp4
+output/
+results/
+
+# Images
+*.png
+*.jpg
+*.jpeg
+similarity_graph.png
+temporal_consistency_graph.png
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Test files
+test_videos/
+sample_videos/
+
+# System Files
+Thumbs.db
+.Spotlight-V100
+.Trashes
